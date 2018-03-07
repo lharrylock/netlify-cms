@@ -93,9 +93,16 @@ export default class ObjectControl extends Component {
     const { collapsed } = this.state;
     const multiFields = field.get('fields');
     const singleField = field.get('field');
-    const typesField = field.get('types');
+    const isModular = field.get('widget') === 'modular';
 
-    if (multiFields) {
+    if (isModular) {
+      return (
+        <div id={forID} className={c(classNameWrapper, 'nc-objectControl-root')}>
+          {forList ? null : <TopBar collapsed={collapsed} onCollapseToggle={this.handleCollapseToggle} />}
+          {collapsed ? null : this.controlFor(value)}
+        </div>
+      );
+    } else if (multiFields) {
       return (
         <div id={forID} className={c(classNameWrapper, 'nc-objectControl-root')}>
           {forList ? null : <TopBar collapsed={collapsed} onCollapseToggle={this.handleCollapseToggle} />}
@@ -104,13 +111,6 @@ export default class ObjectControl extends Component {
       );
     } else if (singleField) {
       return this.controlFor(singleField);
-    } else if (typesField) {
-      return (
-        <div id={forID} className={c(classNameWrapper, 'nc-objectControl-root')}>
-          {forList ? null : <TopBar collapsed={collapsed} onCollapseToggle={this.handleCollapseToggle} />}
-          {collapsed ? null : this.controlFor(value)}
-        </div>
-      );
     }
 
     return <h3>No field(s) defined for this widget</h3>;
