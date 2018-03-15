@@ -322,7 +322,7 @@ export default class ListControl extends Component {
       <div id={forID} className={c(classNameWrapper, 'nc-listControl')}>
         <TopBar
           onAdd={types ? this.handleAddType : this.handleAdd}
-          listLabel={label.toLowerCase()}
+          listLabel={this.isModular ? field.get('label') : label.toLowerCase()}
           onCollapseAllToggle={this.handleCollapseAllToggle}
           allItemsCollapsed={itemsCollapsed.every(val => val === true)}
           itemsCount={items.size}
