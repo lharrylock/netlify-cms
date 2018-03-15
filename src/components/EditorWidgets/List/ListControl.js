@@ -5,11 +5,15 @@ import { List, Map } from 'immutable';
 import { partial } from 'lodash';
 import c from 'classnames';
 import { SortableContainer, SortableElement, SortableHandle } from 'react-sortable-hoc';
-import { Icon, ListItemTopBar } from 'UI';
+import { Icon, ListItemTopBar, Dropdown, DropdownItem } from 'UI';
 import ObjectControl from 'EditorWidgets/Object/ObjectControl';
 
 function ListItem(props) {
-  return <div {...props} className={`list-item ${ props.className || '' }`}>{props.children}</div>;
+  return (
+    <div {...props} className={`list-item ${ props.className || '' }`}>
+      {props.children}
+    </div>
+  );
 }
 ListItem.propTypes = {
   className: PropTypes.string,
@@ -23,7 +27,14 @@ function valueToString(value) {
 
 const SortableListItem = SortableElement(ListItem);
 
-const TopBar = ({ onAdd, listLabel, onCollapseAllToggle, allItemsCollapsed, itemsCount }) => (
+const getSingularLabel = (label) => {
+  if (label.charAt(label.length - 1).toLowerCase() === 's') {
+    label = label.substr(0, label.length - 1);
+  }
+  return label;
+};
+
+const TopBar = ({ onAdd, listLabel, onCollapseAllToggle, allItemsCollapsed, itemsCount, types }) => (
   <div className="nc-listControl-topBar">
     <div className="nc-listControl-listCollapseToggle">
       <button className="nc-listControl-listCollapseToggleButton" onClick={onCollapseAllToggle}>
@@ -31,15 +42,34 @@ const TopBar = ({ onAdd, listLabel, onCollapseAllToggle, allItemsCollapsed, item
       </button>
       {itemsCount} {listLabel}
     </div>
-    <button className="nc-listControl-addButton" onClick={onAdd}>
-      Add {listLabel} <Icon type="add" size="xsmall" />
-    </button>
+    {!types && (
+      <button className="nc-listControl-addButton" onClick={onAdd}>
+        Add {listLabel} <Icon type="add" size="xsmall" />
+      </button>
+    )}
+    {types && (
+      <div className="nc-toolbar-dropdown" style={{ zIndex: 100 }}>
+        <Dropdown
+          dropdownTopOverlap="24px"
+          button={
+            <button className="nc-listControl-addButton">
+              Add {getSingularLabel(listLabel)} <Icon type="add" size="xsmall" />
+            </button>
+          }
+        >
+          {types &&
+            types
+              .toList()
+              .map((itemType, idx) => (
+                <DropdownItem key={idx} label={itemType.get('label')} onClick={() => onAdd({ itemType })} />
+              ))}
+        </Dropdown>
+      </div>
+    )}
   </div>
 );
 
-const SortableList = SortableContainer(({ items, renderItem }) => {
-  return <div>{items.map(renderItem)}</div>;
-});
+const SortableList = SortableContainer(({ items, renderItem }) => <div>{items.map(renderItem)}</div>);
 
 const valueTypes = {
   SINGLE: 'SINGLE',
@@ -79,6 +109,11 @@ export default class ListControl extends Component {
     };
 
     this.valueType = null;
+    
+    this.isModular = false;
+    if (props.field.get('types')) {
+      this.isModular = true;
+    }
   }
 
   /**
@@ -96,7 +131,7 @@ export default class ListControl extends Component {
 
     if (field.get('fields')) {
       this.valueType = valueTypes.MULTIPLE;
-    } else if (field.get('field')) {
+    } else if (field.get('field') || field.get('types')) {
       this.valueType = valueTypes.SINGLE;
     }
   }
@@ -127,10 +162,13 @@ export default class ListControl extends Component {
 
   handleFocus = () => {
     this.props.setActiveStyle();
-  }
+  };
 
   handleBlur = (e) => {
-    const listValue = e.target.value.split(',').map(el => el.trim()).filter(el => el);
+    const listValue = e.target.value
+      .split(',')
+      .map(el => el.trim())
+      .filter(el => el);
     this.setState({ value: valueToString(listValue) });
     this.props.setInactiveStyle();
   };
@@ -138,7 +176,14 @@ export default class ListControl extends Component {
   handleAdd = (e) => {
     e.preventDefault();
     const { value, onChange } = this.props;
-    const parsedValue = (this.valueType === valueTypes.SINGLE) ? null : Map();
+    const parsedValue = this.valueType === valueTypes.SINGLE ? null : Map();
+    this.setState({ itemsCollapsed: this.state.itemsCollapsed.push(false) });
+    onChange((value || List()).push(parsedValue));
+  };
+
+  handleAddType = ({ itemType }) => {
+    const { value, onChange } = this.props;
+    const parsedValue = itemType;
     this.setState({ itemsCollapsed: this.state.itemsCollapsed.push(false) });
     onChange((value || List()).push(parsedValue));
   };
@@ -154,7 +199,14 @@ export default class ListControl extends Component {
     return (fieldName, newValue, newMetadata) => {
       const { value, metadata, onChange, forID } = this.props;
       const newObjectValue = this.getObjectValue(index).set(fieldName, newValue);
-      const parsedValue = (this.valueType === valueTypes.SINGLE) ? newObjectValue.first() : newObjectValue;
+
+      let parsedValue;
+      if (this.isModular) {
+        parsedValue = newObjectValue;
+      } else {
+        parsedValue = this.valueType === valueTypes.SINGLE ? newObjectValue.first() : newObjectValue;
+      }
+
       const parsedMetadata = {
         [forID]: Object.assign(metadata ? metadata.toJS() : {}, newMetadata ? newMetadata[forID] : {}),
       };
@@ -171,14 +223,14 @@ export default class ListControl extends Component {
     this.setState({ itemsCollapsed: itemsCollapsed.delete(index) });
 
     onChange(value.remove(index), parsedMetadata);
-  }
+  };
 
   handleItemCollapseToggle = (index, event) => {
     event.preventDefault();
     const { itemsCollapsed } = this.state;
     const collapsed = itemsCollapsed.get(index);
     this.setState({ itemsCollapsed: itemsCollapsed.set(index, !collapsed) });
-  }
+  };
 
   handleCollapseAllToggle = (e) => {
     e.preventDefault();
@@ -186,14 +238,21 @@ export default class ListControl extends Component {
     const { itemsCollapsed } = this.state;
     const allItemsCollapsed = itemsCollapsed.every(val => val === true);
     this.setState({ itemsCollapsed: List(Array(value.size).fill(!allItemsCollapsed)) });
-  }
+  };
 
   objectLabel(item) {
     const { field } = this.props;
     const multiFields = field.get('fields');
     const singleField = field.get('field');
-    const labelField = (multiFields && multiFields.first()) || singleField;
-    const value = multiFields ? item.get(multiFields.first().get('name')) : singleField.get('label');
+    const labelField = this.isModular ? item : (multiFields && multiFields.first()) || singleField;
+    let value;
+
+    if (this.isModular) {
+      value = item.get('name');
+    } else {
+      value = multiFields ? item.get(multiFields.first().get('name')) : singleField.get('label');
+    }
+
     return (value || `No ${ labelField.get('name') }`).toString();
   }
 
@@ -226,28 +285,30 @@ export default class ListControl extends Component {
     const collapsed = itemsCollapsed.get(index);
     const classNames = ['nc-listControl-item', collapsed ? 'nc-listControl-collapsed' : ''];
 
-    return (<SortableListItem className={classNames.join(' ')} index={index} key={`item-${ index }`}>
-      <ListItemTopBar
-        className="nc-listControl-itemTopBar"
-        collapsed={collapsed}
-        onCollapseToggle={partial(this.handleItemCollapseToggle, index)}
-        onRemove={partial(this.handleRemove, index)}
-        dragHandleHOC={SortableHandle}
-      />
-      <div className="nc-listControl-objectLabel">{this.objectLabel(item)}</div>
-      <ObjectControl
-        value={item}
-        field={field}
-        onChangeObject={this.handleChangeFor(index)}
-        getAsset={getAsset}
-        onOpenMediaLibrary={onOpenMediaLibrary}
-        mediaPaths={mediaPaths}
-        onAddAsset={onAddAsset}
-        onRemoveInsertedMedia={onRemoveInsertedMedia}
-        classNameWrapper={`${classNameWrapper} nc-listControl-objectControl`}
-        forList
-      />
-    </SortableListItem>);
+    return (
+      <SortableListItem className={classNames.join(' ')} index={index} key={`item-${ index }`}>
+        <ListItemTopBar
+          className="nc-listControl-itemTopBar"
+          collapsed={collapsed}
+          onCollapseToggle={partial(this.handleItemCollapseToggle, index)}
+          onRemove={partial(this.handleRemove, index)}
+          dragHandleHOC={SortableHandle}
+        />
+        <div className="nc-listControl-objectLabel">{this.objectLabel(item)}</div>
+        <ObjectControl
+          value={item}
+          field={field}
+          onChangeObject={this.handleChangeFor(index)}
+          getAsset={getAsset}
+          onOpenMediaLibrary={onOpenMediaLibrary}
+          mediaPaths={mediaPaths}
+          onAddAsset={onAddAsset}
+          onRemoveInsertedMedia={onRemoveInsertedMedia}
+          classNameWrapper={`${ classNameWrapper } nc-listControl-objectControl`}
+          forList
+        />
+      </SortableListItem>
+    );
   };
 
   renderListControl() {
@@ -255,15 +316,17 @@ export default class ListControl extends Component {
     const { itemsCollapsed } = this.state;
     const items = value || List();
     const label = field.get('label_singular') || field.get('label');
+    const types = field.get('types');
 
     return (
       <div id={forID} className={c(classNameWrapper, 'nc-listControl')}>
         <TopBar
-          onAdd={this.handleAdd}
+          onAdd={types ? this.handleAddType : this.handleAdd}
           listLabel={label.toLowerCase()}
           onCollapseAllToggle={this.handleCollapseAllToggle}
           allItemsCollapsed={itemsCollapsed.every(val => val === true)}
           itemsCount={items.size}
+          types={types}
         />
         <SortableList
           items={items}
@@ -280,18 +343,20 @@ export default class ListControl extends Component {
     const { field, forID, classNameWrapper } = this.props;
     const { value } = this.state;
 
-    if (field.get('field') || field.get('fields')) {
+    if (field.get('field') || field.get('fields') || field.get('types')) {
       return this.renderListControl();
     }
 
-    return (<input
-      type="text"
-      id={forID}
-      value={value}
-      onChange={this.handleChange}
-      onFocus={this.handleFocus}
-      onBlur={this.handleBlur}
-      className={classNameWrapper}
-    />);
+    return (
+      <input
+        type="text"
+        id={forID}
+        value={value}
+        onChange={this.handleChange}
+        onFocus={this.handleFocus}
+        onBlur={this.handleBlur}
+        className={classNameWrapper}
+      />
+    );
   }
-};
+}
